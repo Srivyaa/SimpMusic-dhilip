@@ -312,57 +312,112 @@ internal class SearchRepositoryImpl(
     private suspend fun filterSongsByContentLanguage(list: ArrayList<SongsResult>): ArrayList<SongsResult> {
         val lang = currentContentLanguage()
         if (lang.isEmpty()) return list
+
         if (lang == "ta") {
-            return list.filter { sr ->
+            val tamilResults = list.filter { sr ->
                 sr.title.containsTamil() ||
                     (sr.artists?.any { it.name.containsTamil() } == true) ||
                     (sr.album?.name.containsTamil())
-            } .let { ArrayList(it) }
+            }
+
+            // If we have Tamil results, return them first (prioritized)
+            // If no Tamil results, return all results (fallback) instead of empty list
+            return if (tamilResults.isNotEmpty()) {
+                ArrayList(tamilResults)
+            } else {
+                Logger.w("SearchFilter", "No Tamil results found for query, returning all results as fallback")
+                list // Fallback to all results
+            }
         }
+
         return list
     }
 
     private suspend fun filterVideosByContentLanguage(list: ArrayList<VideosResult>): ArrayList<VideosResult> {
         val lang = currentContentLanguage()
         if (lang.isEmpty()) return list
+
         if (lang == "ta") {
-            return list.filter { vr ->
+            val tamilResults = list.filter { vr ->
                 (vr.title ?: "").containsTamil() || (vr.artists?.any { it.name.containsTamil() } == true)
-            } .let { ArrayList(it) }
+            }
+
+            // If we have Tamil results, return them first (prioritized)
+            // If no Tamil results, return all results (fallback) instead of empty list
+            return if (tamilResults.isNotEmpty()) {
+                ArrayList(tamilResults)
+            } else {
+                Logger.w("SearchFilter", "No Tamil video results found for query, returning all results as fallback")
+                list // Fallback to all results
+            }
         }
+
         return list
     }
 
     private suspend fun filterPlaylistsByContentLanguage(list: ArrayList<PlaylistsResult>): ArrayList<PlaylistsResult> {
         val lang = currentContentLanguage()
         if (lang.isEmpty()) return list
+
         if (lang == "ta") {
-            return list.filter { pr ->
+            val tamilResults = list.filter { pr ->
                 pr.title.containsTamil() || pr.author.containsTamil()
-            } .let { ArrayList(it) }
+            }
+
+            // If we have Tamil results, return them first (prioritized)
+            // If no Tamil results, return all results (fallback) instead of empty list
+            return if (tamilResults.isNotEmpty()) {
+                ArrayList(tamilResults)
+            } else {
+                Logger.w("SearchFilter", "No Tamil playlist results found for query, returning all results as fallback")
+                list // Fallback to all results
+            }
         }
+
         return list
     }
 
     private suspend fun filterAlbumsByContentLanguage(list: ArrayList<AlbumsResult>): ArrayList<AlbumsResult> {
         val lang = currentContentLanguage()
         if (lang.isEmpty()) return list
+
         if (lang == "ta") {
-            return list.filter { ar ->
+            val tamilResults = list.filter { ar ->
                 ar.title.containsTamil() || ar.artists.any { it.name.containsTamil() }
-            } .let { ArrayList(it) }
+            }
+
+            // If we have Tamil results, return them first (prioritized)
+            // If no Tamil results, return all results (fallback) instead of empty list
+            return if (tamilResults.isNotEmpty()) {
+                ArrayList(tamilResults)
+            } else {
+                Logger.w("SearchFilter", "No Tamil album results found for query, returning all results as fallback")
+                list // Fallback to all results
+            }
         }
+
         return list
     }
 
     private suspend fun filterArtistsByContentLanguage(list: ArrayList<ArtistsResult>): ArrayList<ArtistsResult> {
         val lang = currentContentLanguage()
         if (lang.isEmpty()) return list
+
         if (lang == "ta") {
-            return list.filter { ar ->
+            val tamilResults = list.filter { ar ->
                 ar.artist.containsTamil()
-            } .let { ArrayList(it) }
+            }
+
+            // If we have Tamil results, return them first (prioritized)
+            // If no Tamil results, return all results (fallback) instead of empty list
+            return if (tamilResults.isNotEmpty()) {
+                ArrayList(tamilResults)
+            } else {
+                Logger.w("SearchFilter", "No Tamil artist results found for query, returning all results as fallback")
+                list // Fallback to all results
+            }
         }
+
         return list
     }
 

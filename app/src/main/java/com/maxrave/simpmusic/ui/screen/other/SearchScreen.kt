@@ -10,7 +10,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
@@ -131,6 +133,7 @@ fun SearchScreen(
     val uiState by searchViewModel.searchScreenUIState.collectAsStateWithLifecycle()
     val searchHistory by searchViewModel.searchHistory.collectAsStateWithLifecycle()
     val contentFilterLanguage by dataStoreManager.contentFilterLanguage.collectAsStateWithLifecycle(initialValue = "")
+    val coroutineScope = rememberCoroutineScope()
 
     var searchUIType by rememberSaveable { mutableStateOf(SearchUIType.EMPTY) }
     var searchText by rememberSaveable { mutableStateOf("") }
@@ -933,6 +936,47 @@ fun SearchScreen(
                                                 textAlign = TextAlign.Center,
                                                 modifier = Modifier.fillMaxWidth(),
                                             )
+                                        }
+                                    }
+
+                                    is SearchScreenUIState.ContentFilteredEmpty -> {
+                                        // Content filtering resulted in empty results
+                                        Box(
+                                            modifier = Modifier.fillMaxSize(),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier.padding(horizontal = 32.dp)
+                                            ) {
+                                                Text(
+                                                    text = stringResource(id = R.string.no_results_found),
+                                                    style = typo.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    textAlign = TextAlign.Center,
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                )
+                                                Spacer(modifier = Modifier.height(16.dp))
+                                                Text(
+                                                    text = uiState.message,
+                                                    style = typo.bodyMedium,
+                                                    textAlign = TextAlign.Center,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                )
+                                                Spacer(modifier = Modifier.height(24.dp))
+                                                Button(
+                                                    onClick = {
+                                                        // Disable content filter temporarily and search again
+                                                        coroutineScope.launch {
+                                                            dataStoreManager.setString(SELECTED_LANGUAGE, "")
+                                                            searchViewModel.searchAll(searchText)
+                                                        }
+                                                    }
+                                                ) {
+                                                    Text(text = stringResource(id = R.string.show_all_results))
+                                                }
+                                            }
                                         }
                                     }
                                 }
