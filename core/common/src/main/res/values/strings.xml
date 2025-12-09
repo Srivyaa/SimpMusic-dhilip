@@ -469,4 +469,5 @@
     <string name="explicit_content_blocked">Explicit content is skipped</string>
     <string name="mix_for_you">Mix for you</string>
     <string name="no_mixes_found">No mixes found</string>
+    <string name="show_all_results">Show all results</string>
 </resources>
