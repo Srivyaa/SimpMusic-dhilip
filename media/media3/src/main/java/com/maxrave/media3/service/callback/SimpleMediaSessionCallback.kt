@@ -24,6 +24,7 @@ import com.maxrave.common.MERGING_DATA_TYPE
 import com.maxrave.common.MEDIA_CUSTOM_COMMAND
 import com.maxrave.common.R
 import com.maxrave.domain.data.entities.EpisodeEntity
+import com.maxrave.domain.data.entities.SearchHistory
 import com.maxrave.domain.data.entities.SongEntity
 import com.maxrave.domain.data.model.browse.album.Track
 import com.maxrave.domain.data.model.home.HomeItem
