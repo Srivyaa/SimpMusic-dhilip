@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.lastOrNull
 import kotlinx.coroutines.guava.future
 
 private const val TAG = "AndroidAuto"
+private const val CLEAR_SEARCH_ACTION = "clear_search"
 
 @UnstableApi
 internal class SimpleMediaSessionCallback(
@@ -93,6 +94,7 @@ internal class SimpleMediaSessionCallback(
     private val searchAlbumResults = mutableListOf<AlbumsResult>()
     private val searchArtistResults = mutableListOf<ArtistsResult>()
     private val searchPodcastResults = mutableListOf<PlaylistsResult>()
+    private var currentSearchQuery: String? = null
 
     override fun onConnect(
         session: MediaSession,
@@ -108,6 +110,7 @@ internal class SimpleMediaSessionCallback(
                 .add(SessionCommand(MEDIA_CUSTOM_COMMAND.RADIO, Bundle()))
                 .add(SessionCommand(MEDIA_CUSTOM_COMMAND.SHUFFLE, Bundle()))
                 .add(SessionCommand(MEDIA_CUSTOM_COMMAND.SAVE, Bundle()))
+                .add(SessionCommand(CLEAR_SEARCH_ACTION, Bundle()))
                 .build()
         return MediaSession.ConnectionResult.accept(
             sessionCommands,
@@ -266,53 +269,65 @@ internal class SimpleMediaSessionCallback(
         params: MediaLibraryService.LibraryParams?,
     ): ListenableFuture<LibraryResult<Void>> =
         scope.future(Dispatchers.IO) {
-            searchTempList.clear()
-            searchPlaylistResults.clear()
-            searchAlbumResults.clear()
-            searchArtistResults.clear()
-            searchPodcastResults.clear()
+            // Only clear search results if the query is different from the current one
+            // or if the query is empty (which indicates a clear action)
+            val shouldClearResults = query != currentSearchQuery || query.isEmpty()
 
-            // Songs
-            searchRepository.getSearchDataSong(query).lastOrNull()?.let { resource ->
-                if (resource is Resource.Success) {
-                    resource.data?.let { searchTempList.addAll(it.toListTrack()) }
-                }
+            if (shouldClearResults) {
+                searchTempList.clear()
+                searchPlaylistResults.clear()
+                searchAlbumResults.clear()
+                searchArtistResults.clear()
+                searchPodcastResults.clear()
             }
 
-            // Playlists (community and featured)
-            val playlistMap = linkedMapOf<String, PlaylistsResult>()
-            searchRepository.getSearchDataPlaylist(query).lastOrNull()?.let { resource ->
-                if (resource is Resource.Success) {
-                    resource.data?.forEach { playlistMap[it.browseId] = it }
+            // Only perform new search if query is not empty and different from current
+            if (query.isNotEmpty() && query != currentSearchQuery) {
+                // Songs
+                searchRepository.getSearchDataSong(query).lastOrNull()?.let { resource ->
+                    if (resource is Resource.Success) {
+                        resource.data?.let { searchTempList.addAll(it.toListTrack()) }
+                    }
                 }
-            }
-            searchRepository.getSearchDataFeaturedPlaylist(query).lastOrNull()?.let { resource ->
-                if (resource is Resource.Success) {
-                    resource.data?.forEach { playlistMap[it.browseId] = it }
-                }
-            }
-            // Filter out podcasts from playlists bucket; podcasts go to dedicated list
-            playlistMap.values.filter { it.objectType().name != "PODCAST" }.let { searchPlaylistResults.addAll(it) }
 
-            // Albums
-            searchRepository.getSearchDataAlbum(query).lastOrNull()?.let { resource ->
-                if (resource is Resource.Success) {
-                    resource.data?.let { searchAlbumResults.addAll(it) }
+                // Playlists (community and featured)
+                val playlistMap = linkedMapOf<String, PlaylistsResult>()
+                searchRepository.getSearchDataPlaylist(query).lastOrNull()?.let { resource ->
+                    if (resource is Resource.Success) {
+                        resource.data?.forEach { playlistMap[it.browseId] = it }
+                    }
                 }
-            }
+                searchRepository.getSearchDataFeaturedPlaylist(query).lastOrNull()?.let { resource ->
+                    if (resource is Resource.Success) {
+                        resource.data?.forEach { playlistMap[it.browseId] = it }
+                    }
+                }
+                // Filter out podcasts from playlists bucket; podcasts go to dedicated list
+                playlistMap.values.filter { it.objectType().name != "PODCAST" }.let { searchPlaylistResults.addAll(it) }
 
-            // Artists
-            searchRepository.getSearchDataArtist(query).lastOrNull()?.let { resource ->
-                if (resource is Resource.Success) {
-                    resource.data?.let { searchArtistResults.addAll(it) }
+                // Albums
+                searchRepository.getSearchDataAlbum(query).lastOrNull()?.let { resource ->
+                    if (resource is Resource.Success) {
+                        resource.data?.let { searchAlbumResults.addAll(it) }
+                    }
                 }
-            }
 
-            // Podcasts
-            searchRepository.getSearchDataPodcast(query).lastOrNull()?.let { resource ->
-                if (resource is Resource.Success) {
-                    resource.data?.let { searchPodcastResults.addAll(it) }
+                // Artists
+                searchRepository.getSearchDataArtist(query).lastOrNull()?.let { resource ->
+                    if (resource is Resource.Success) {
+                        resource.data?.let { searchArtistResults.addAll(it) }
+                    }
                 }
+
+                // Podcasts
+                searchRepository.getSearchDataPodcast(query).lastOrNull()?.let { resource ->
+                    if (resource is Resource.Success) {
+                        resource.data?.let { searchPodcastResults.addAll(it) }
+                    }
+                }
+
+                // Update current search query
+                currentSearchQuery = query
             }
 
             val total = searchTempList.size +
