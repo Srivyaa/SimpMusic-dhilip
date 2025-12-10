@@ -86,9 +86,6 @@ sealed class SearchScreenUIState {
     object Success : SearchScreenUIState()
 
     object Error : SearchScreenUIState()
-
-    // New state for when content filtering results in no matches
-    data class ContentFilteredEmpty(val message: String) : SearchScreenUIState()
 }
 
 class SearchViewModel(
@@ -285,38 +282,20 @@ class SearchViewModel(
                     temp.addAll(podcast)
                 }
 
-                // Check if all results are empty (likely due to content filtering)
-                val allResultsEmpty = song.isEmpty() && video.isEmpty() && album.isEmpty() &&
-                                      artist.isEmpty() && playlist.isEmpty() &&
-                                      featuredPlaylist.isEmpty() && podcast.isEmpty()
-
-                if (allResultsEmpty) {
-                    // Check if content language filtering is active
-                    val contentLang = runBlocking { dataStoreManager.contentFilterLanguage.firstOrNull() }
-                    if (!contentLang.isNullOrEmpty()) {
-                        log("Content filtering active with language: $contentLang, but no results found", Log.WARN)
-                        _searchScreenUIState.value = SearchScreenUIState.ContentFilteredEmpty(
-                            "No results found matching your content language filter. Try searching with different keywords or adjust your content language settings."
-                        )
-                    } else {
-                        _searchScreenUIState.value = SearchScreenUIState.Success
-                    }
-                } else {
-                    _searchScreenState.update { state ->
-                        state.copy(
-                            searchType = SearchType.ALL,
-                            searchAllResult = temp,
-                            searchSongsResult = song,
-                            searchArtistsResult = artist,
-                            searchAlbumsResult = album,
-                            searchPlaylistsResult = playlist,
-                            searchVideosResult = video,
-                            searchFeaturedPlaylistsResult = featuredPlaylist,
-                            searchPodcastsResult = podcast,
-                        )
-                    }
-                    _searchScreenUIState.value = SearchScreenUIState.Success
+                _searchScreenState.update { state ->
+                    state.copy(
+                        searchType = SearchType.ALL,
+                        searchAllResult = temp,
+                        searchSongsResult = song,
+                        searchArtistsResult = artist,
+                        searchAlbumsResult = album,
+                        searchPlaylistsResult = playlist,
+                        searchVideosResult = video,
+                        searchFeaturedPlaylistsResult = featuredPlaylist,
+                        searchPodcastsResult = podcast,
+                    )
                 }
+                _searchScreenUIState.value = SearchScreenUIState.Success
             } catch (e: Exception) {
                 e.printStackTrace()
                 _searchScreenUIState.value = SearchScreenUIState.Error

@@ -10,9 +10,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.launch
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
@@ -133,33 +131,11 @@ fun SearchScreen(
     val uiState by searchViewModel.searchScreenUIState.collectAsStateWithLifecycle()
     val searchHistory by searchViewModel.searchHistory.collectAsStateWithLifecycle()
     val contentFilterLanguage by dataStoreManager.contentFilterLanguage.collectAsStateWithLifecycle(initialValue = "")
-    val coroutineScope = rememberCoroutineScope()
 
     var searchUIType by rememberSaveable { mutableStateOf(SearchUIType.EMPTY) }
     var searchText by rememberSaveable { mutableStateOf("") }
     var isSearchSubmitted by rememberSaveable { mutableStateOf(false) }
     var isExpanded by rememberSaveable { mutableStateOf(false) }
-    
-    // Restore search state from ViewModel if available
-    LaunchedEffect(searchScreenState) {
-        if (searchScreenState.hasActiveSearch && searchScreenState.lastSearchQuery.isNotEmpty()) {
-            searchText = searchScreenState.lastSearchQuery
-            isSearchSubmitted = true
-            
-            // Re-execute the search to restore results
-            val query = searchScreenState.lastSearchQuery
-            when (searchScreenState.searchType) {
-                SearchType.ALL -> searchViewModel.searchAll(query)
-                SearchType.SONGS -> searchViewModel.searchSongs(query)
-                SearchType.VIDEOS -> searchViewModel.searchVideos(query)
-                SearchType.ALBUMS -> searchViewModel.searchAlbums(query)
-                SearchType.ARTISTS -> searchViewModel.searchArtists(query)
-                SearchType.PLAYLISTS -> searchViewModel.searchPlaylists(query)
-                SearchType.FEATURED_PLAYLISTS -> searchViewModel.searchFeaturedPlaylist(query)
-                SearchType.PODCASTS -> searchViewModel.searchPodcast(query)
-            }
-        }
-    }
 
     val focusRequester = remember { FocusRequester() }
 
@@ -327,33 +303,27 @@ fun SearchScreen(
                         )
                     },
                     trailingIcon = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
+                        IconButton(
+                            modifier =
+                                Modifier
+                                    .clip(CircleShape),
+                            onClick = {
+                                searchText = ""
+                                isSearchSubmitted = false
+                            },
                         ) {
-                            IconButton(
-                                modifier =
-                                    Modifier
-                                        .clip(CircleShape),
-                                onClick = {
-                                    searchText = ""
-                                    isSearchSubmitted = false
-                                    searchViewModel.clearSearchState()
-                                },
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.baseline_close_24),
-                                    contentDescription = "Clear search",
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            IconButton(
-                                onClick = { startVoiceSearch() },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Mic,
-                                    contentDescription = "Voice search",
-                                )
-                            }
+                            Icon(
+                                painter = painterResource(id = R.drawable.baseline_close_24),
+                                contentDescription = "Clear search",
+                            )
+                        }
+                        IconButton(
+                            onClick = { startVoiceSearch() },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Mic,
+                                contentDescription = "Voice search",
+                            )
                         }
                     },
                 )
@@ -936,47 +906,6 @@ fun SearchScreen(
                                                 textAlign = TextAlign.Center,
                                                 modifier = Modifier.fillMaxWidth(),
                                             )
-                                        }
-                                    }
-
-                                    is SearchScreenUIState.ContentFilteredEmpty -> {
-                                        // Content filtering resulted in empty results
-                                        Box(
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                modifier = Modifier.padding(horizontal = 32.dp)
-                                            ) {
-                                                Text(
-                                                    text = stringResource(id = R.string.no_results_found),
-                                                    style = typo.titleMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    textAlign = TextAlign.Center,
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                )
-                                                Spacer(modifier = Modifier.height(16.dp))
-                                                Text(
-                                                    text = uiState.message,
-                                                    style = typo.bodyMedium,
-                                                    textAlign = TextAlign.Center,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                )
-                                                Spacer(modifier = Modifier.height(24.dp))
-                                                Button(
-                                                    onClick = {
-                                                        // Disable content filter temporarily and search again
-                                                        coroutineScope.launch {
-                                                            dataStoreManager.setString(SELECTED_LANGUAGE, "")
-                                                            searchViewModel.searchAll(searchText)
-                                                        }
-                                                    }
-                                                ) {
-                                                    Text(text = stringResource(id = R.string.show_all_results))
-                                                }
-                                            }
                                         }
                                     }
                                 }
