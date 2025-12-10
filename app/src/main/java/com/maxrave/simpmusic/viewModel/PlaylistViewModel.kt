@@ -27,6 +27,7 @@ import com.maxrave.domain.utils.toPlaylistEntity
 import com.maxrave.domain.utils.toSongEntity
 import com.maxrave.domain.utils.toTrack
 import com.maxrave.logger.Logger
+import com.maxrave.simpmusic.extension.matchesSearchQuery
 import com.maxrave.simpmusic.viewModel.PlaylistUIState.Error
 import com.maxrave.simpmusic.viewModel.PlaylistUIState.Loading
 import com.maxrave.simpmusic.viewModel.PlaylistUIState.Success
@@ -88,7 +89,12 @@ class PlaylistViewModel(
 
     // Combined tracks to display (either original or search results)
     val displayTracks: StateFlow<List<Track>> =
-        _isSearchActive.combine(_searchQuery, _searchResults, _tracks) { isActive, query, results, allTracks ->
+        combine(
+            _isSearchActive,
+            _searchQuery,
+            _searchResults,
+            _tracks
+        ) { isActive: Boolean, query: String, results: List<Track>, allTracks: List<Track> ->
             if (isActive && query.isNotBlank()) {
                 results
             } else {
