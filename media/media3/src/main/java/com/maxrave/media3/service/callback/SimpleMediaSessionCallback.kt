@@ -95,6 +95,8 @@ internal class SimpleMediaSessionCallback(
     private val searchArtistResults = mutableListOf<ArtistsResult>()
     private val searchPodcastResults = mutableListOf<PlaylistsResult>()
     private var currentSearchQuery: String? = null
+    private val suggestionCache = mutableMapOf<String, List<MediaItem>>()
+    private var lastSuggestionTime = 0L
 
     override fun onConnect(
         session: MediaSession,
@@ -406,23 +408,98 @@ internal class SimpleMediaSessionCallback(
             }
         }
     
-    private fun getCategoryTitle(category: String): String = when (category) {
-        SONG -> "Songs"
-        ONLINE_PLAYLIST -> "Playlists" 
-        ALBUM -> "Albums"
-        ARTIST -> "Artists"
-        PODCAST -> "Podcasts"
-        else -> "Results"
-    }
+        @UnstableApi
+        override fun onGetSearchSuggestions(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: MediaLibraryService.LibraryParams?,
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            return scope.future(Dispatchers.IO) {
+                // Check cache first for performance
+                val currentTime = System.currentTimeMillis()
+                val cachedSuggestions = suggestionCache[query]
     
-    private fun getCategoryIcon(category: String): Uri? = when (category) {
-        SONG -> drawableUri(R.drawable.baseline_music_note_24)
-        ONLINE_PLAYLIST -> drawableUri(R.drawable.baseline_playlist_add_24)
-        ALBUM -> drawableUri(R.drawable.baseline_album_24)
-        ARTIST -> drawableUri(R.drawable.baseline_people_alt_24)
-        PODCAST -> drawableUri(R.drawable.round_library_music_24)
-        else -> null
-    }
+                // Use cached suggestions if they're recent (less than 5 minutes old)
+                if (cachedSuggestions != null && (currentTime - lastSuggestionTime) < 300000) {
+                    return@future LibraryResult.ofItemList(ImmutableList.copyOf(cachedSuggestions), params)
+                }
+    
+                if (query.isBlank()) {
+                    return@future LibraryResult.ofItemList(emptyList(), params)
+                }
+    
+                try {
+                    // Get suggestions from repository
+                    val suggestionsResult = searchRepository.getSuggestQuery(query).lastOrNull()
+    
+                    when (suggestionsResult) {
+                        is Resource.Success -> {
+                            val suggestionItems = mutableListOf<MediaItem>()
+    
+                            // Add query suggestions
+                            suggestionsResult.data?.queries?.forEach { suggestionQuery ->
+                                suggestionItems.add(
+                                    createSuggestionMediaItem(
+                                        id = "suggestion_query_${suggestionQuery.hashCode()}",
+                                        title = suggestionQuery,
+                                        subtitle = context.getString(R.string.search_for, suggestionQuery),
+                                        iconUri = drawableUri(R.drawable.baseline_search_24),
+                                        query = suggestionQuery
+                                    )
+                                )
+                            }
+    
+                            // Add YouTube item suggestions
+                            suggestionsResult.data?.recommendedItems?.forEach { item ->
+                                when (item) {
+                                    is SongsResult -> suggestionItems.add(item.toSuggestionMediaItem())
+                                    is AlbumsResult -> suggestionItems.add(item.toSuggestionMediaItem())
+                                    is ArtistsResult -> suggestionItems.add(item.toSuggestionMediaItem())
+                                    is PlaylistsResult -> suggestionItems.add(item.toSuggestionMediaItem())
+                                    is VideosResult -> suggestionItems.add(item.toSuggestionMediaItem())
+                                    else -> {} // Ignore unknown types
+                                }
+                            }
+    
+                            // Cache the suggestions
+                            suggestionCache[query] = suggestionItems
+                            lastSuggestionTime = currentTime
+    
+                            LibraryResult.ofItemList(ImmutableList.copyOf(suggestionItems), params)
+                        }
+                        is Resource.Error -> {
+                            // Fallback: return empty list on error
+                            LibraryResult.ofItemList(emptyList(), params)
+                        }
+                        else -> {
+                            LibraryResult.ofItemList(emptyList(), params)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Logger.e(TAG, "Error getting search suggestions: ${e.message}")
+                    LibraryResult.ofItemList(emptyList(), params)
+                }
+            }
+        }
+    
+        private fun getCategoryTitle(category: String): String = when (category) {
+            SONG -> "Songs"
+            ONLINE_PLAYLIST -> "Playlists"
+            ALBUM -> "Albums"
+            ARTIST -> "Artists"
+            PODCAST -> "Podcasts"
+            else -> "Results"
+        }
+    
+        private fun getCategoryIcon(category: String): Uri? = when (category) {
+            SONG -> drawableUri(R.drawable.baseline_music_note_24)
+            ONLINE_PLAYLIST -> drawableUri(R.drawable.baseline_playlist_add_24)
+            ALBUM -> drawableUri(R.drawable.baseline_album_24)
+            ARTIST -> drawableUri(R.drawable.baseline_people_alt_24)
+            PODCAST -> drawableUri(R.drawable.round_library_music_24)
+            else -> null
+        }
     
     private fun getVideoTypeBundle(videoType: String): Bundle = Bundle().apply {
         when {
@@ -1160,6 +1237,96 @@ internal class SimpleMediaSessionCallback(
 
                 else -> defaultResult
             }
+                // Handle suggestion selections
+                else if (mediaId.startsWith("suggestion_query_")) {
+                    val query = mediaItems.firstOrNull()?.mediaMetadata?.extras?.getString("suggestion_query")
+                    if (query != null) {
+                        // Trigger search with the suggested query
+                        return scope.future {
+                            // Clear previous search results
+                            searchTempList.clear()
+                            searchPlaylistResults.clear()
+                            searchAlbumResults.clear()
+                            searchArtistResults.clear()
+                            searchPodcastResults.clear()
+                            currentSearchQuery = query
+
+                            // Perform search with the suggested query
+                            val songTracks = searchRepository.getSearchDataSong(query).lastOrNull()?.data?.toListTrack().orEmpty()
+                            if (songTracks.isNotEmpty()) {
+                                searchTempList.addAll(songTracks)
+                                MediaSession.MediaItemsWithStartPosition(
+                                    songTracks.take(25).map { it.toMediaItem() },
+                                    0,
+                                    0
+                                )
+                            } else {
+                                // Fallback to regular search flow
+                                defaultResult
+                            }
+                        }
+                    } else {
+                        defaultResult
+                    }
+                }
+                else if (mediaId.startsWith("suggestion_song_")) {
+                    val videoId = mediaId.removePrefix("suggestion_song_")
+                    val song = searchTempList.find { it.videoId == videoId }
+                        ?: streamRepository.getFullMetadata(videoId).lastOrNull()?.data
+                    if (song != null) {
+                        return scope.future {
+                            songRepository.insertSong(song.toSongEntity()).lastOrNull()
+                            MediaSession.MediaItemsWithStartPosition(
+                                listOf(song.toMediaItemWithoutPath()),
+                                0,
+                                0
+                            )
+                        }
+                    } else {
+                        defaultResult
+                    }
+                }
+                else if (mediaId.startsWith("suggestion_album_")) {
+                    val browseId = mediaId.removePrefix("suggestion_album_")
+                    return scope.future {
+                        val album = albumRepository.getAlbumData(browseId).lastOrNull()?.data
+                        val tracks = album?.tracks?.take(25)?.map { it.toMediaItem() } ?: emptyList()
+                        MediaSession.MediaItemsWithStartPosition(tracks, 0, 0)
+                    }
+                }
+                else if (mediaId.startsWith("suggestion_artist_")) {
+                    val browseId = mediaId.removePrefix("suggestion_artist_")
+                    return scope.future {
+                        val radio = playlistRepository.getRadio(browseId).lastOrNull()?.data?.first
+                        val tracks = radio?.tracks?.take(25)?.map { it.toMediaItem() } ?: emptyList()
+                        MediaSession.MediaItemsWithStartPosition(tracks, 0, 0)
+                    }
+                }
+                else if (mediaId.startsWith("suggestion_playlist_")) {
+                    val browseId = mediaId.removePrefix("suggestion_playlist_")
+                    return scope.future {
+                        val playlist = playlistRepository.getFullPlaylistData(browseId).lastOrNull()?.data
+                        val tracks = playlist?.tracks?.take(25)?.map { it.toMediaItem() } ?: emptyList()
+                        MediaSession.MediaItemsWithStartPosition(tracks, 0, 0)
+                    }
+                }
+                else if (mediaId.startsWith("suggestion_video_")) {
+                    val videoId = mediaId.removePrefix("suggestion_video_")
+                    val video = searchTempList.find { it.videoId == videoId }
+                        ?: streamRepository.getFullMetadata(videoId).lastOrNull()?.data
+                    if (video != null) {
+                        return scope.future {
+                            songRepository.insertSong(video.toSongEntity()).lastOrNull()
+                            MediaSession.MediaItemsWithStartPosition(
+                                listOf(video.toMediaItemWithoutPath()),
+                                0,
+                                0
+                            )
+                        }
+                    } else {
+                        defaultResult
+                    }
+                }
         }
 
     private fun drawableUri(
@@ -1352,6 +1519,137 @@ internal class SimpleMediaSessionCallback(
                     .setDescription(MERGING_DATA_TYPE.VIDEO)
                     .build(),
             ).build()
+
+    private fun createSuggestionMediaItem(
+        id: String,
+        title: String,
+        subtitle: String?,
+        iconUri: Uri?,
+        query: String
+    ): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId(id)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(title)
+                    .setSubtitle(subtitle)
+                    .setArtist(subtitle)
+                    .setArtworkUri(iconUri)
+                    .setIsPlayable(false)
+                    .setIsBrowsable(true)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                    .setExtras(Bundle().apply {
+                        putString("suggestion_query", query)
+                    })
+                    .build()
+            )
+            .build()
+    }
+
+    private fun SongsResult.toSuggestionMediaItem(): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId("suggestion_song_${this.videoId}")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(this.title)
+                    .setSubtitle(this.artists?.toListName()?.connectArtists())
+                    .setArtist(this.artists?.toListName()?.connectArtists())
+                    .setArtworkUri(this.thumbnails?.lastOrNull()?.url?.toUri())
+                    .setIsPlayable(true)
+                    .setIsBrowsable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                    .setExtras(Bundle().apply {
+                        putString("video_id", this.videoId)
+                        putString("type", "song")
+                    })
+                    .build()
+            )
+            .build()
+    }
+
+    private fun AlbumsResult.toSuggestionMediaItem(): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId("suggestion_album_${this.browseId}")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(this.title)
+                    .setSubtitle(this.artists.toListName().connectArtists())
+                    .setArtist(this.artists.toListName().connectArtists())
+                    .setArtworkUri(this.thumbnails.lastOrNull()?.url?.toUri())
+                    .setIsPlayable(true)
+                    .setIsBrowsable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST)
+                    .setExtras(Bundle().apply {
+                        putString("browse_id", this.browseId)
+                        putString("type", "album")
+                    })
+                    .build()
+            )
+            .build()
+    }
+
+    private fun ArtistsResult.toSuggestionMediaItem(): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId("suggestion_artist_${this.browseId}")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(this.artist)
+                    .setSubtitle(context.getString(R.string.artists))
+                    .setArtist(this.artist)
+                    .setArtworkUri(this.thumbnails.lastOrNull()?.url?.toUri())
+                    .setIsPlayable(true)
+                    .setIsBrowsable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                    .setExtras(Bundle().apply {
+                        putString("browse_id", this.browseId)
+                        putString("type", "artist")
+                    })
+                    .build()
+            )
+            .build()
+    }
+
+    private fun PlaylistsResult.toSuggestionMediaItem(): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId("suggestion_playlist_${this.browseId}")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(this.title)
+                    .setSubtitle(this.author.ifEmpty { "YouTube Music" })
+                    .setArtist(this.author.ifEmpty { "YouTube Music" })
+                    .setArtworkUri(this.thumbnails.lastOrNull()?.url?.toUri())
+                    .setIsPlayable(true)
+                    .setIsBrowsable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_PLAYLIST)
+                    .setExtras(Bundle().apply {
+                        putString("browse_id", this.browseId)
+                        putString("type", "playlist")
+                    })
+                    .build()
+            )
+            .build()
+    }
+
+    private fun VideosResult.toSuggestionMediaItem(): MediaItem {
+        return MediaItem.Builder()
+            .setMediaId("suggestion_video_${this.videoId}")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(this.title)
+                    .setSubtitle(this.artists?.toListName()?.connectArtists())
+                    .setArtist(this.artists?.toListName()?.connectArtists())
+                    .setArtworkUri(this.thumbnails?.lastOrNull()?.url?.toUri())
+                    .setIsPlayable(true)
+                    .setIsBrowsable(false)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+                    .setExtras(Bundle().apply {
+                        putString("video_id", this.videoId)
+                        putString("type", "video")
+                    })
+                    .build()
+            )
+            .build()
+    }
 
     companion object {
         const val ROOT = "root"
