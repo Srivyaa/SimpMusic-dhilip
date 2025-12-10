@@ -37,6 +37,16 @@ import simpmusic.composeapp.generated.resources.songs
 import simpmusic.composeapp.generated.resources.videos
 
 // State cho tìm kiếm
+
+// Data structures for grouped search results
+data class GroupedSearchResult(
+    val category: SearchCategory,
+    val items: List<SearchResultType>
+)
+
+enum class SearchCategory {
+    SONGS, VIDEOS, ALBUMS, ARTISTS, PLAYLISTS, FEATURED_PLAYLISTS, PODCASTS
+}
 data class SearchScreenState(
     val searchType: SearchType = SearchType.ALL,
     val searchAllResult: List<SearchResultType> = emptyList(),
@@ -459,6 +469,35 @@ class SearchViewModel(
                     is Resource.Error -> {
                         _searchScreenUIState.value = SearchScreenUIState.Error
                     }
+
+    // Function to get grouped search results
+    fun getGroupedSearchResults(): List<GroupedSearchResult> {
+        val results = searchScreenState.value.searchAllResult
+        return groupSearchResults(results)
+    }
+
+    private fun groupSearchResults(results: List<SearchResultType>): List<GroupedSearchResult> {
+        val songs = results.filterIsInstance<SongsResult>()
+        val videos = results.filterIsInstance<VideosResult>()
+        val albums = results.filterIsInstance<AlbumsResult>()
+        val artists = results.filterIsInstance<ArtistsResult>()
+        val playlists = results.filterIsInstance<PlaylistsResult>()
+            .filter { it.resultType != "Podcast" && it.resultType != "Featured" }
+        val featuredPlaylists = results.filterIsInstance<PlaylistsResult>()
+            .filter { it.resultType == "Featured" }
+        val podcasts = results.filterIsInstance<PlaylistsResult>()
+            .filter { it.resultType == "Podcast" }
+
+        return listOfNotNull(
+            if (songs.isNotEmpty()) GroupedSearchResult(SearchCategory.SONGS, songs) else null,
+            if (videos.isNotEmpty()) GroupedSearchResult(SearchCategory.VIDEOS, videos) else null,
+            if (albums.isNotEmpty()) GroupedSearchResult(SearchCategory.ALBUMS, albums) else null,
+            if (artists.isNotEmpty()) GroupedSearchResult(SearchCategory.ARTISTS, artists) else null,
+            if (playlists.isNotEmpty()) GroupedSearchResult(SearchCategory.PLAYLISTS, playlists) else null,
+            if (featuredPlaylists.isNotEmpty()) GroupedSearchResult(SearchCategory.FEATURED_PLAYLISTS, featuredPlaylists) else null,
+            if (podcasts.isNotEmpty()) GroupedSearchResult(SearchCategory.PODCASTS, podcasts) else null
+        )
+    }
                 }
             }
         }

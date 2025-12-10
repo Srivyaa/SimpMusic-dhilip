@@ -588,127 +588,160 @@ fun SearchScreen(
 
                                             Crossfade(targetState = currentResults.isNotEmpty()) {
                                                 if (it) {
-                                                    LazyColumn(
-                                                        contentPadding = PaddingValues(horizontal = 4.dp),
-                                                        state = rememberLazyListState(),
-                                                    ) {
-                                                        items(currentResults) { result ->
-                                                            when (result) {
-                                                                is SongsResult ->
-                                                                    SongFullWidthItems(
-                                                                        track = result.toTrack(),
-                                                                        isPlaying = result.videoId == currentVideoId,
-                                                                        modifier = Modifier,
-                                                                        onMoreClickListener = {
-                                                                            onMoreClick(result.toTrack().toSongEntity())
-                                                                        },
-                                                                        onClickListener = {
-                                                                            val firstTrack = result.toTrack()
-                                                                            searchViewModel.setQueueData(
-                                                                                QueueData.Data(
-                                                                                    listTracks = arrayListOf(firstTrack),
-                                                                                    firstPlayedTrack = firstTrack,
-                                                                                    playlistId = "RDAMVM${result.videoId}",
-                                                                                    playlistName =
-                                                                                        "\"${searchText}\" ${
-                                                                                            getStringBlocking(
-                                                                                                Res.string.in_search,
-                                                                                            )
-                                                                                        }",
-                                                                                    playlistType = PlaylistType.RADIO,
-                                                                                    continuation = null,
-                                                                                ),
-                                                                            )
-                                                                            searchViewModel.loadMediaItem(firstTrack, Config.SONG_CLICK)
-                                                                        },
-                                                                        onAddToQueue = {
-                                                                            sharedViewModel.addListToQueue(
-                                                                                arrayListOf(result.toTrack()),
-                                                                            )
-                                                                        },
-                                                                    )
+                                                    // Use grouped results for "All" search type, regular list for specific types
+                                                    if (searchScreenState.searchType == SearchType.ALL) {
+                                                        val groupedResults = remember(searchScreenState.searchAllResult) {
+                                                            searchViewModel.getGroupedSearchResults()
+                                                        }
 
-                                                                is VideosResult ->
-                                                                    SongFullWidthItems(
-                                                                        track = result.toTrack(),
-                                                                        isPlaying = result.videoId == currentVideoId,
-                                                                        modifier = Modifier,
-                                                                        onMoreClickListener = {
-                                                                            onMoreClick(result.toTrack().toSongEntity())
-                                                                        },
-                                                                        onClickListener = {
-                                                                            val firstTrack = result.toTrack()
-                                                                            searchViewModel.setQueueData(
-                                                                                QueueData.Data(
-                                                                                    listTracks = arrayListOf(firstTrack),
-                                                                                    firstPlayedTrack = firstTrack,
-                                                                                    playlistId = "RDAMVM${result.videoId}",
-                                                                                    playlistName =
-                                                                                        "\"${searchText}\" ${
-                                                                                            getStringBlocking(
-                                                                                                Res.string.in_search,
-                                                                                            )
-                                                                                        }",
-                                                                                    playlistType = PlaylistType.RADIO,
-                                                                                    continuation = null,
-                                                                                ),
-                                                                            )
-                                                                            searchViewModel.loadMediaItem(firstTrack, Config.VIDEO_CLICK)
-                                                                        },
-                                                                        onAddToQueue = {
-                                                                            sharedViewModel.addListToQueue(
-                                                                                arrayListOf(result.toTrack()),
-                                                                            )
-                                                                        },
-                                                                    )
-
-                                                                is AlbumsResult ->
-                                                                    PlaylistFullWidthItems(
-                                                                        data = result,
-                                                                        onClickListener = {
-                                                                            navController.navigate(
-                                                                                AlbumDestination(
-                                                                                    result.browseId,
-                                                                                ),
-                                                                            )
-                                                                        },
-                                                                    )
-
-                                                                is ArtistsResult ->
-                                                                    ArtistFullWidthItems(
-                                                                        data = result,
-                                                                        onClickListener = {
-                                                                            navController.navigate(
-                                                                                ArtistDestination(
-                                                                                    result.browseId,
-                                                                                ),
-                                                                            )
-                                                                        },
-                                                                    )
-
-                                                                is PlaylistsResult ->
-                                                                    PlaylistFullWidthItems(
-                                                                        data = result,
-                                                                        onClickListener = {
-                                                                            if (result.resultType == "Podcast") {
-                                                                                navController.navigate(
-                                                                                    PodcastDestination(
-                                                                                        result.browseId,
-                                                                                    ),
-                                                                                )
-                                                                            } else {
-                                                                                navController.navigate(
-                                                                                    PlaylistDestination(
-                                                                                        result.browseId,
-                                                                                    ),
-                                                                                )
-                                                                            }
-                                                                        },
-                                                                    )
+                                                        if (groupedResults.isNotEmpty()) {
+                                                            GroupedSearchResults(
+                                                                groupedResults = groupedResults,
+                                                                currentVideoId = currentVideoId,
+                                                                onMoreClick = onMoreClick,
+                                                                navController = navController,
+                                                                searchViewModel = searchViewModel,
+                                                                sharedViewModel = sharedViewModel,
+                                                                searchText = searchText,
+                                                                isAndroidAuto = false // Default to false for main app
+                                                            )
+                                                        } else {
+                                                            Box(
+                                                                modifier = Modifier.fillMaxSize(),
+                                                                contentAlignment = Alignment.Center,
+                                                            ) {
+                                                                Text(
+                                                                    text = stringResource(Res.string.no_results_found),
+                                                                    style = typo().titleMedium,
+                                                                    textAlign = TextAlign.Center,
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                )
                                                             }
                                                         }
-                                                        // Space at bottom to account for bottom navigation and mini player
-                                                        item { Spacer(modifier = Modifier.height(150.dp)) }
+                                                    } else {
+                                                        // Original list display for specific search types
+                                                        LazyColumn(
+                                                            contentPadding = PaddingValues(horizontal = 4.dp),
+                                                            state = rememberLazyListState(),
+                                                        ) {
+                                                            items(currentResults) { result ->
+                                                                when (result) {
+                                                                    is SongsResult ->
+                                                                        SongFullWidthItems(
+                                                                            track = result.toTrack(),
+                                                                            isPlaying = result.videoId == currentVideoId,
+                                                                            modifier = Modifier,
+                                                                            onMoreClickListener = {
+                                                                                onMoreClick(result.toTrack().toSongEntity())
+                                                                            },
+                                                                            onClickListener = {
+                                                                                val firstTrack = result.toTrack()
+                                                                                searchViewModel.setQueueData(
+                                                                                    QueueData.Data(
+                                                                                        listTracks = arrayListOf(firstTrack),
+                                                                                        firstPlayedTrack = firstTrack,
+                                                                                        playlistId = "RDAMVM${result.videoId}",
+                                                                                        playlistName =
+                                                                                            "\"${searchText}\" ${
+                                                                                                getStringBlocking(
+                                                                                                    Res.string.in_search,
+                                                                                                )
+                                                                                            }",
+                                                                                        playlistType = PlaylistType.RADIO,
+                                                                                        continuation = null,
+                                                                                    ),
+                                                                                )
+                                                                                searchViewModel.loadMediaItem(firstTrack, Config.SONG_CLICK)
+                                                                            },
+                                                                            onAddToQueue = {
+                                                                                sharedViewModel.addListToQueue(
+                                                                                    arrayListOf(result.toTrack()),
+                                                                                )
+                                                                            },
+                                                                        )
+
+                                                                    is VideosResult ->
+                                                                        SongFullWidthItems(
+                                                                            track = result.toTrack(),
+                                                                            isPlaying = result.videoId == currentVideoId,
+                                                                            modifier = Modifier,
+                                                                            onMoreClickListener = {
+                                                                                onMoreClick(result.toTrack().toSongEntity())
+                                                                            },
+                                                                            onClickListener = {
+                                                                                val firstTrack = result.toTrack()
+                                                                                searchViewModel.setQueueData(
+                                                                                    QueueData.Data(
+                                                                                        listTracks = arrayListOf(firstTrack),
+                                                                                        firstPlayedTrack = firstTrack,
+                                                                                        playlistId = "RDAMVM${result.videoId}",
+                                                                                        playlistName =
+                                                                                            "\"${searchText}\" ${
+                                                                                                getStringBlocking(
+                                                                                                    Res.string.in_search,
+                                                                                                )
+                                                                                            }",
+                                                                                        playlistType = PlaylistType.RADIO,
+                                                                                        continuation = null,
+                                                                                    ),
+                                                                                )
+                                                                                searchViewModel.loadMediaItem(firstTrack, Config.VIDEO_CLICK)
+                                                                            },
+                                                                            onAddToQueue = {
+                                                                                sharedViewModel.addListToQueue(
+                                                                                    arrayListOf(result.toTrack()),
+                                                                                )
+                                                                            },
+                                                                        )
+
+                                                                    is AlbumsResult ->
+                                                                        PlaylistFullWidthItems(
+                                                                            data = result,
+                                                                            onClickListener = {
+                                                                                navController.navigate(
+                                                                                    AlbumDestination(
+                                                                                        result.browseId,
+                                                                                    ),
+                                                                                )
+                                                                            },
+                                                                        )
+
+                                                                    is ArtistsResult ->
+                                                                        ArtistFullWidthItems(
+                                                                            data = result,
+                                                                            onClickListener = {
+                                                                                navController.navigate(
+                                                                                    ArtistDestination(
+                                                                                        result.browseId,
+                                                                                    ),
+                                                                                )
+                                                                            },
+                                                                        )
+
+                                                                    is PlaylistsResult ->
+                                                                        PlaylistFullWidthItems(
+                                                                            data = result,
+                                                                            onClickListener = {
+                                                                                if (result.resultType == "Podcast") {
+                                                                                    navController.navigate(
+                                                                                        PodcastDestination(
+                                                                                            result.browseId,
+                                                                                        ),
+                                                                                    )
+                                                                                } else {
+                                                                                    navController.navigate(
+                                                                                        PlaylistDestination(
+                                                                                            result.browseId,
+                                                                                        ),
+                                                                                    )
+                                                                                }
+                                                                            },
+                                                                        )
+                                                                }
+                                                            }
+                                                            // Space at bottom to account for bottom navigation and mini player
+                                                            item { Spacer(modifier = Modifier.height(150.dp)) }
+                                                        }
                                                     }
                                                 } else {
                                                     Box(
@@ -857,6 +890,53 @@ fun SuggestItemRow(
                 text = title,
                 style = typo().labelSmall,
                 maxLines = 1,
+
+@Composable
+fun SearchCategoryHeader(category: SearchCategory, isAndroidAuto: Boolean = false) {
+    val categoryName = when (category) {
+        SearchCategory.SONGS -> stringResource(Res.string.songs)
+        SearchCategory.VIDEOS -> stringResource(Res.string.videos)
+        SearchCategory.ALBUMS -> stringResource(Res.string.albums)
+        SearchCategory.ARTISTS -> stringResource(Res.string.artists)
+        SearchCategory.PLAYLISTS -> stringResource(Res.string.playlists)
+        SearchCategory.FEATURED_PLAYLISTS -> stringResource(Res.string.featured_playlists)
+        SearchCategory.PODCASTS -> stringResource(Res.string.podcasts)
+    }
+
+    if (isAndroidAuto) {
+        // Android Auto optimized header
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .padding(vertical = 12.dp, horizontal = 20.dp)
+        ) {
+            Text(
+                text = categoryName,
+                style = typo().titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    } else {
+        // Regular app header
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceContainer)
+                .padding(vertical = 8.dp, horizontal = 16.dp)
+        ) {
+            Text(
+                text = categoryName,
+                style = typo().labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(2.dp))
@@ -889,4 +969,168 @@ enum class SearchUIType {
     SEARCH_HISTORY,
     SEARCH_SUGGESTIONS,
     SEARCH_RESULTS,
+
+@Composable
+fun SearchCategoryHeader(category: SearchCategory) {
+    val categoryName = when (category) {
+        SearchCategory.SONGS -> stringResource(Res.string.songs)
+        SearchCategory.VIDEOS -> stringResource(Res.string.videos)
+        SearchCategory.ALBUMS -> stringResource(Res.string.albums)
+        SearchCategory.ARTISTS -> stringResource(Res.string.artists)
+        SearchCategory.PLAYLISTS -> stringResource(Res.string.playlists)
+        SearchCategory.FEATURED_PLAYLISTS -> stringResource(Res.string.featured_playlists)
+        SearchCategory.PODCASTS -> stringResource(Res.string.podcasts)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .padding(vertical = 8.dp, horizontal = 16.dp)
+    ) {
+        Text(
+            text = categoryName,
+            style = typo().labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+fun GroupedSearchResults(
+    groupedResults: List<GroupedSearchResult>,
+    currentVideoId: String,
+    onMoreClick: (SongEntity) -> Unit,
+    navController: NavController,
+    searchViewModel: SearchViewModel,
+    sharedViewModel: SharedViewModel,
+    searchText: String,
+    isAndroidAuto: Boolean = false
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(horizontal = 4.dp),
+        state = rememberLazyListState(),
+    ) {
+        groupedResults.forEach { groupedResult ->
+            stickyHeader {
+                SearchCategoryHeader(category = groupedResult.category, isAndroidAuto = isAndroidAuto)
+            }
+
+            items(groupedResult.items) { result ->
+                when (result) {
+                    is SongsResult ->
+                        SongFullWidthItems(
+                            track = result.toTrack(),
+                            isPlaying = result.videoId == currentVideoId,
+                            modifier = Modifier,
+                            onMoreClickListener = { onMoreClick(result.toTrack().toSongEntity()) },
+                            onClickListener = {
+                                val firstTrack = result.toTrack()
+                                searchViewModel.setQueueData(
+                                    QueueData.Data(
+                                        listTracks = arrayListOf(firstTrack),
+                                        firstPlayedTrack = firstTrack,
+                                        playlistId = "RDAMVM${result.videoId}",
+                                        playlistName =
+                                            "\"${searchText}\" ${
+                                                getStringBlocking(
+                                                    Res.string.in_search,
+                                                )
+                                            }",
+                                        playlistType = PlaylistType.RADIO,
+                                        continuation = null,
+                                    ),
+                                )
+                                searchViewModel.loadMediaItem(firstTrack, Config.SONG_CLICK)
+                            },
+                            onAddToQueue = {
+                                sharedViewModel.addListToQueue(
+                                    arrayListOf(result.toTrack()),
+                                )
+                            },
+                        )
+
+                    is VideosResult ->
+                        SongFullWidthItems(
+                            track = result.toTrack(),
+                            isPlaying = result.videoId == currentVideoId,
+                            modifier = Modifier,
+                            onMoreClickListener = { onMoreClick(result.toTrack().toSongEntity()) },
+                            onClickListener = {
+                                val firstTrack = result.toTrack()
+                                searchViewModel.setQueueData(
+                                    QueueData.Data(
+                                        listTracks = arrayListOf(firstTrack),
+                                        firstPlayedTrack = firstTrack,
+                                        playlistId = "RDAMVM${result.videoId}",
+                                        playlistName =
+                                            "\"${searchText}\" ${
+                                                getStringBlocking(
+                                                    Res.string.in_search,
+                                                )
+                                            }",
+                                        playlistType = PlaylistType.RADIO,
+                                        continuation = null,
+                                    ),
+                                )
+                                searchViewModel.loadMediaItem(firstTrack, Config.VIDEO_CLICK)
+                            },
+                            onAddToQueue = {
+                                sharedViewModel.addListToQueue(
+                                    arrayListOf(result.toTrack()),
+                                )
+                            },
+                        )
+
+                    is AlbumsResult ->
+                        PlaylistFullWidthItems(
+                            data = result,
+                            onClickListener = {
+                                navController.navigate(
+                                    AlbumDestination(
+                                        result.browseId,
+                                    ),
+                                )
+                            },
+                        )
+
+                    is ArtistsResult ->
+                        ArtistFullWidthItems(
+                            data = result,
+                            onClickListener = {
+                                navController.navigate(
+                                    ArtistDestination(
+                                        result.browseId,
+                                    ),
+                                )
+                            },
+                        )
+
+                    is PlaylistsResult ->
+                        PlaylistFullWidthItems(
+                            data = result,
+                            onClickListener = {
+                                if (result.resultType == "Podcast") {
+                                    navController.navigate(
+                                        PodcastDestination(
+                                            result.browseId,
+                                        ),
+                                    )
+                                } else {
+                                    navController.navigate(
+                                        PlaylistDestination(
+                                            result.browseId,
+                                        ),
+                                    )
+                                }
+                            },
+                        )
+                }
+            }
+        }
+        // Space at bottom to account for bottom navigation and mini player
+        item { Spacer(modifier = Modifier.height(150.dp)) }
+    }
+}
 }
