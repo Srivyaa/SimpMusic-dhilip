@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.singleOrNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import org.koin.core.component.inject
 import java.time.LocalDateTime
@@ -74,6 +75,26 @@ class PlaylistViewModel(
 
     private var _tracksListState = MutableStateFlow<ListState>(ListState.IDLE)
     val tracksListState: StateFlow<ListState> = _tracksListState
+
+    // Search functionality
+    private var _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery
+
+    private var _searchResults = MutableStateFlow<List<Track>>(emptyList())
+    val searchResults: StateFlow<List<Track>> = _searchResults
+
+    private var _isSearchActive = MutableStateFlow(false)
+    val isSearchActive: StateFlow<Boolean> = _isSearchActive
+
+    // Combined tracks to display (either original or search results)
+    val displayTracks: StateFlow<List<Track>> =
+        _isSearchActive.combine(_searchQuery, _searchResults, _tracks) { isActive, query, results, allTracks ->
+            if (isActive && query.isNotBlank()) {
+                results
+            } else {
+                allTracks
+            }
+        }.stateIn(viewModelScope, WhileSubscribed(1000), emptyList())
 
     private var collectDownloadedJob: Job? = null
     private var _downloadedList = MutableStateFlow<List<String>>(emptyList())
@@ -165,6 +186,9 @@ class PlaylistViewModel(
         _playlistEntity.value = null
         _downloadedList.value = emptyList()
         _listColors.value = emptyList()
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+        _isSearchActive.value = false
         checkDownloadedPlaylist?.cancel()
         checkDownloadedPlaylist = null
     }
@@ -276,9 +300,15 @@ class PlaylistViewModel(
                                     log("Insert song: $it")
                                 }
                         }
-                        _tracks.update {
-                            val newList = it.toMutableList()
+                        _tracks.update { currentTracks ->
+                            val newList = currentTracks.toMutableList()
                             newList.addAll(res.first ?: emptyList())
+                            
+                            // Re-run search if search is active
+                            if (_isSearchActive.value && _searchQuery.value.isNotBlank()) {
+                                performSearch(_searchQuery.value)
+                            }
+                            
                             newList
                         }
                         if (res.second.isNullOrEmpty()) {
@@ -362,7 +392,13 @@ class PlaylistViewModel(
                             .getSongsByListVideoId(it)
                             .singleOrNull()
                             ?.let { song ->
-                                _tracks.value = song.map { it.toTrack() }
+                                val newTracks = song.map { it.toTrack() }
+                                _tracks.value = newTracks
+                                
+                                // Re-run search if search is active
+                                if (_isSearchActive.value && _searchQuery.value.isNotBlank()) {
+                                    performSearch(_searchQuery.value)
+                                }
                             }
                     }
                     _tracksListState.value = ListState.PAGINATION_EXHAUST
@@ -554,6 +590,16 @@ class PlaylistViewModel(
             PlaylistUIEvent.Favorite -> {
                 updatePlaylistLiked(!liked.value, data.id)
             }
+            // Search events
+            is PlaylistUIEvent.UpdateSearchQuery -> {
+                updateSearchQuery(event.query)
+            }
+            PlaylistUIEvent.ClearSearch -> {
+                clearSearch()
+            }
+            PlaylistUIEvent.ToggleSearch -> {
+                setSearchActive(!isSearchActive.value)
+            }
         }
     }
 
@@ -624,10 +670,69 @@ class PlaylistViewModel(
         }
     }
 
+    // Search functionality implementation
+    private var searchJob: Job? = null
+
+    /**
+     * Perform search filtering on the loaded tracks
+     */
+    private fun performSearch(query: String) {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch(Dispatchers.Default) {
+            val trimmedQuery = query.trim().lowercase()
+            if (trimmedQuery.isBlank()) {
+                _searchResults.value = emptyList()
+                return@launch
+            }
+
+            val allTracks = _tracks.value
+            val filteredTracks = allTracks.filter { track ->
+                track.matchesSearchQuery(trimmedQuery)
+            }
+            
+            _searchResults.value = filteredTracks
+        }
+    }
+
+    /**
+     * Update search query and trigger search
+     */
+    fun updateSearchQuery(query: String) {
+        _searchQuery.value = query
+        if (query.isNotBlank()) {
+            _isSearchActive.value = true
+            performSearch(query)
+        } else {
+            _isSearchActive.value = false
+            _searchResults.value = emptyList()
+        }
+    }
+
+    /**
+     * Activate or deactivate search mode
+     */
+    fun setSearchActive(active: Boolean) {
+        _isSearchActive.value = active
+        if (!active) {
+            _searchQuery.value = ""
+            _searchResults.value = emptyList()
+        }
+    }
+
+    /**
+     * Clear search and return to normal view
+     */
+    fun clearSearch() {
+        _isSearchActive.value = false
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+    }
+
     override fun onCleared() {
         super.onCleared()
         collectDownloadedJob?.cancel()
         playlistEntityJob?.cancel()
+        searchJob?.cancel()
     }
 }
 
@@ -664,6 +769,15 @@ sealed class PlaylistUIEvent {
     data object Favorite : PlaylistUIEvent()
 
     data object Download : PlaylistUIEvent()
+
+    // Search events
+    data class UpdateSearchQuery(
+        val query: String,
+    ) : PlaylistUIEvent()
+
+    data object ClearSearch : PlaylistUIEvent()
+
+    data object ToggleSearch : PlaylistUIEvent()
 }
 
 enum class ListState {
